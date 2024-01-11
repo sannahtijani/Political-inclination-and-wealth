@@ -815,4 +815,134 @@ unique(fA.rnd.1$postvote_presvtwho)
 # Merge household and personal data based on 'hid' and 'pid'
 merged_data <- merge(data_us16_wh, fA.rnd.1, by.x = "hid", by.y = "hid", all.x = TRUE)
 
+########################          US20       ##############################################
 
+#Load data will need to adapt in Lissy
+data_us16_wi <- read_dta("us16wp (4).dta")
+data_us16_wh <- read_dta("us16wh (1).dta")
+
+zip_file_path_anes20 <- "C:/Users/ducie/Documents/WU/distribution field/Project/Election data/anes_timeseries_2020_stata_20220210.zip"
+extracted_dir <- "C:/Users/ducie/Documents/WU/distribution field/Project/Election data/"
+unzip(zip_file_path_anes20, exdir = extracted_dir)
+list.files(extracted_dir)
+anes_20 <- read_dta(file.path(extracted_dir, "anes_timeseries_2020_stata_20220210.dta"))
+
+
+#create data frame with variables of interest from anes 
+
+selected_vars <- c("V201004", "V201029","V202073", "V201507x", "V201511x", "V201534x", "V202468x")
+anes20_data_selected <- anes_20 %>% 
+  select(all_of(selected_vars))
+
+
+#transforming the education variable for data fusion
+data_us16_wi <- data_us16_wi %>%
+  mutate(
+    education = case_when(
+      educlev %in% c(111, 110,120,100,130) ~ 1,
+      educlev %in% c(200,210) ~ 2,
+      educlev %in% c(220, 300, 311) ~ 3,
+      educlev %in% c(310, 312) ~ 4,
+      educlev %in% c(313, 320) ~ 5,
+      TRUE ~ NA_integer_
+    )
+  ) %>%
+  select(-educlev)  
+
+anes20_data_selected <- anes20_data_selected %>%
+  mutate(
+    education = case_when(
+      V201511x == 1 ~ 1,
+      V201511x == 2 ~ 2,
+      V201511x == 3 ~ 3,
+      V201511x == 4 ~ 4,
+      V201511x == 5 ~ 5,
+      TRUE ~ NA_real_
+    )
+  ) %>%
+  select(-V201511x)
+
+#modify the employment status variable for data fusion
+anes20_data_selected <- anes20_data_selected %>%
+  mutate(
+    employment = case_when(
+      V201534x == 1 ~ 1,
+      V201534x == 4 ~ 2,
+      V201534x == 5 ~ 3,
+      V201534x == 6 ~ 4,
+      V201534x == 7 ~ 5,
+      V201534x == 8 ~ 6,
+      TRUE ~ NA_integer_
+    )
+  ) %>%
+  select(-V201534x)
+
+data_us16_wi <- data_us16_wi %>%
+  mutate(
+    employment = case_when(
+      lfs == 100 ~ 1,
+      lfs == 200 ~ 2,
+      lfs == 310 ~ 3,
+      lfs == 330 ~ 4,
+      lfs == 340 ~ 5,
+      lfs == 320 ~ 6,
+      lfs == 300 ~ NA_integer_,
+      TRUE ~ NA_integer_
+    )
+  ) %>%
+  select(-lfs)
+
+#modify the income variable for data fusion
+anes20_data_selected$V202468x <- as.factor(anes20_data_selected$V202468x)
+
+anes20_data_selected <- anes20_data_selected %>%
+  mutate(
+    income = as.numeric(case_when(
+      V202468x %in% c("1", "2", "3","4") ~ 1,
+      V202468x %in% c( "5", "6", "7","8","9") ~ 2,
+      V202468x %in% c( "10", "11", "12", "13", "14", "15") ~ 3,
+      V202468x %in% c("16", "17", "18", "19") ~ 4,
+      V202468x %in% c("20","21","22") ~ 5,
+      TRUE ~ NA_real_
+    ))
+  ) %>%
+  select(-V202468x)
+
+
+data_us16_wi <- data_us16_wi %>%
+  mutate(
+    income = case_when(
+      pitotal < 27026 ~ 1,
+      pitotal >= 27026 & pitotal <= 52179 ~ 2,
+      pitotal >= 52180 & pitotal <= 85076 ~ 3,
+      pitotal >= 85077 & pitotal <= 141110 ~ 4,
+      pitotal > 141110 ~ 5,
+      TRUE ~ NA_real_
+    )
+  )
+
+### matching process ###
+#Random distance hot deck
+
+anes20_data_selected1 <- anes20_data_selected[complete.cases(anes20_data_selected$income), ]
+unique(anes20_data_selected1$income)
+data_us16_wi1 <- data_us16_wi[complete.cases(data_us16_wi$income), ]
+unique(data_us16_wi1$income)
+
+
+
+group.v <- c("income")
+rnd.1 <- RANDwNND.hotdeck(data.rec = data_us16_wi1, data.don = anes20_data_selected1,
+                          match.vars = NULL, don.class = group.v)
+
+fA.rnd.1 <- create.fused(data.rec = data_us16_wi1, data.don = anes20_data_selected1,
+                         mtc.ids = rnd.1$mtc.ids, z.vars = c("V202073", "V201029"))
+unique(fA.rnd.1$V202073)
+
+
+# Merge household and personal data based on 'hid' and 'pid'
+merged_data <- merge(data_us16_wh, fA.rnd.1, by.x = "hid", by.y = "hid", all.x = TRUE)
+
+## need to do the weight
+##need to ask about issue on income from 12, 20
+##need to try for matching with 3 categories can run to see missing class and enter them manually
