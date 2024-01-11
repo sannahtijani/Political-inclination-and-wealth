@@ -684,3 +684,135 @@ unique(fA.rnd.1$V085044a)
 
 # Merge household and personal data based on 'hid' and 'pid'
 merged_data <- merge(data_us16_wh, fA.rnd.1, by.x = "hid", by.y = "hid", all.x = TRUE)
+
+########################          US12       ##############################################
+
+#Load data will need to adapt in Lissy
+data_us16_wi <- read_dta("us16wp (4).dta")
+data_us16_wh <- read_dta("us16wh (1).dta")
+
+zip_file_path_anes12 <- "C:/Users/ducie/Documents/WU/distribution field/Project/Election data/anes_timeseries_2012_dta.zip"
+extracted_dir <- "C:/Users/ducie/Documents/WU/distribution field/Project/Election data/"
+unzip(zip_file_path_anes12, exdir = extracted_dir)
+list.files(extracted_dir)
+anes_12 <- read_dta(file.path(extracted_dir, "anes_timeseries_2012.dta"))
+
+
+#create data frame with variables of interest from anes 
+
+selected_vars <- c("prevote_intpres", "dem_age_r_x","dem_edugroup_x", "dem_empstatus_1digitfin_x", "postvote_presvtwho", "incgroup_prepost_x")
+anes12_data_selected <- anes_12 %>% 
+  select(all_of(selected_vars))
+
+
+#transforming the education variable for data fusion
+data_us16_wi <- data_us16_wi %>%
+  mutate(
+    education = case_when(
+      educlev %in% c(111, 110,120,100,130) ~ 1,
+      educlev %in% c(200,210) ~ 2,
+      educlev %in% c(220, 300, 311) ~ 3,
+      educlev %in% c(310, 312) ~ 4,
+      educlev %in% c(313, 320) ~ 5,
+      TRUE ~ NA_integer_
+    )
+  ) %>%
+  select(-educlev)  
+
+anes12_data_selected <- anes12_data_selected %>%
+  mutate(
+    education = case_when(
+      dem_edugroup_x == 1 ~ 1,
+      dem_edugroup_x == 2 ~ 2,
+      dem_edugroup_x == 3 ~ 3,
+      dem_edugroup_x == 4 ~ 4,
+      dem_edugroup_x == 5 ~ 5,
+      TRUE ~ NA_real_
+    )
+  ) %>%
+  select(-dem_edugroup_x)
+
+#modify the employment status variable for data fusion
+anes12_data_selected <- anes12_data_selected %>%
+  mutate(
+    employment = case_when(
+      dem_empstatus_1digitfin_x == 1 ~ 1,
+      dem_empstatus_1digitfin_x == 4 ~ 2,
+      dem_empstatus_1digitfin_x == 5 ~ 3,
+      dem_empstatus_1digitfin_x == 6 ~ 4,
+      dem_empstatus_1digitfin_x == 7 ~ 5,
+      dem_empstatus_1digitfin_x == 8 ~ 6,
+      TRUE ~ NA_integer_
+    )
+  ) %>%
+  select(-dem_empstatus_1digitfin_x)
+
+data_us16_wi <- data_us16_wi %>%
+  mutate(
+    employment = case_when(
+      lfs == 100 ~ 1,
+      lfs == 200 ~ 2,
+      lfs == 310 ~ 3,
+      lfs == 330 ~ 4,
+      lfs == 340 ~ 5,
+      lfs == 320 ~ 6,
+      lfs == 300 ~ NA_integer_,
+      TRUE ~ NA_integer_
+    )
+  ) %>%
+  select(-lfs)
+
+#modify the income variable for data fusion
+anes12_data_selected$incgroup_prepost_x <- as.factor(anes12_data_selected$incgroup_prepost_x)
+
+anes12_data_selected <- anes12_data_selected %>%
+  mutate(
+    income = as.numeric(case_when(
+      incgroup_prepost_x %in% c("1", "2", "3","4", "5", "6") ~ 1,
+      incgroup_prepost_x %in% c("7","8","9","10", "11", "12") ~ 2,
+      incgroup_prepost_x %in% c( "13", "14", "15", "16", "17") ~ 3,
+      incgroup_prepost_x %in% c("18", "19", "20","21","22") ~ 4,
+      incgroup_prepost_x %in% c("23","24","25","26", "27", "28") ~ 5,
+      TRUE ~ NA_real_
+    ))
+  ) %>%
+  select(-incgroup_prepost_x)
+
+
+data_us16_wi <- data_us16_wi %>%
+  mutate(
+    income = case_when(
+      pitotal < 20599 ~ 1,
+      pitotal >= 20600 & pitotal <= 39764 ~ 2,
+      pitotal >= 39765 & pitotal <= 64582 ~ 3,
+      pitotal >= 64583 & pitotal <= 104096 ~ 4,
+      pitotal > 104096 ~ 5,
+      TRUE ~ NA_real_
+    )
+  )
+
+
+
+### matching process ###
+#Random distance hot deck
+
+anes12_data_selected1 <- anes12_data_selected[complete.cases(anes12_data_selected$income), ]
+unique(anes12_data_selected1$income)
+data_us16_wi1 <- data_us16_wi[complete.cases(data_us16_wi$income), ]
+unique(data_us16_wi1$income)
+
+
+
+group.v <- c("income")
+rnd.1 <- RANDwNND.hotdeck(data.rec = data_us16_wi1, data.don = anes12_data_selected1,
+                          match.vars = NULL, don.class = group.v)
+
+fA.rnd.1 <- create.fused(data.rec = data_us16_wi1, data.don = anes12_data_selected1,
+                         mtc.ids = rnd.1$mtc.ids, z.vars = c("postvote_presvtwho", "prevote_intpres"))
+unique(fA.rnd.1$postvote_presvtwho)
+
+
+# Merge household and personal data based on 'hid' and 'pid'
+merged_data <- merge(data_us16_wh, fA.rnd.1, by.x = "hid", by.y = "hid", all.x = TRUE)
+
+
