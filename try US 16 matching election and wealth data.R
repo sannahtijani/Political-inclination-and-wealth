@@ -9,30 +9,25 @@ library(StatMatch)
 getwd()
 setwd("C:/Users/ducie/Documents/WU/distribution field/Project")
 
+########################US16##############################################
 
-# Read the data file
+#Load data
 data_us16_wi <- read_dta("us16wp (4).dta")
 data_us16_wh <- read_dta("us16wh (1).dta")
 
-# Set the path to the ZIP file
+
 zip_file_path <- "C:/Users/ducie/Documents/WU/distribution field/Project/Election data/anes_timeseries_2016_dta.zip"
 
-# Set the directory where you want to extract the files
 extracted_dir <- "C:/Users/ducie/Documents/WU/distribution field/Project/Election data/"
 
-# Unzip the file
 unzip(zip_file_path, exdir = extracted_dir)
 
-# List the files in the extracted directory to confirm the extraction
 list.files(extracted_dir)
 
-# Read the Stata dataset into a data frame
 anes_data <- read_dta(file.path(extracted_dir, "anes_timeseries_2016.dta"))
 
-# Print the first few rows of the dataset
-head(anes_data)
 
-#create data with variables of interest
+#create data frame with variables of interest from anes 
 
 selected_vars <- c("V161109", "V161268", "V161316", "V161324", "V161334", "V162024a", 
                    "V162034a", "V162292a", "V161270", "V161342", "V161267", 
@@ -41,7 +36,7 @@ anes_data_selected <- anes_data %>%
   select(all_of(selected_vars))
 
 
-#transforming the education variable for future matching
+#transforming the education variable for data fusion
 data_us16_wi <- data_us16_wi %>%
   mutate(
     education = case_when(
@@ -57,11 +52,8 @@ data_us16_wi <- data_us16_wi %>%
       TRUE ~ NA_integer_
     )
   ) %>%
-  select(-educlev)  # Remove the original variable
+  select(-educlev)  
 
-library(dplyr)
-
-# Rename V161270 to education and recode values
 anes_data_selected <- anes_data_selected %>%
   mutate(
     education = case_when(
@@ -77,11 +69,9 @@ anes_data_selected <- anes_data_selected %>%
       TRUE ~ NA_real_
     )
   ) %>%
-  select(-V161270)  # Remove the original variable
+  select(-V161270)
 
-
-
-#modify the employment status variable in both sets
+#modify the employment status variable for data fusion
 anes_data_selected <- anes_data_selected %>%
   mutate(
     employment = case_when(
@@ -112,13 +102,10 @@ data_us16_wi <- data_us16_wi %>%
   ) %>%
   select(-lfs)
 
-# Step 1: Convert the variable from character to factor
+#modify the income variable for data fusion
 anes_data_selected$V161361x <- as.factor(anes_data_selected$V161361x)
 
-# Step 2: Rename the variable to "income"
 names(anes_data_selected)[names(anes_data_selected) == "V161361x"] <- "income"
-
-# Step 3: Recode the values based on the specified conditions
 
 anes_data_selected <- anes_data_selected %>%
   mutate(
@@ -132,10 +119,6 @@ anes_data_selected <- anes_data_selected %>%
     )
   )
 
-# Assuming your data frame is named data_us16_wi
-
-library(dplyr)
-
 data_us16_wi <- data_us16_wi %>%
   mutate(
     income = case_when(
@@ -148,9 +131,6 @@ data_us16_wi <- data_us16_wi %>%
     )
   )
 
-
-
-# Rename the variable
 data_us16_wi$income <- data_us16_wi$pitotal
 
 
@@ -170,10 +150,6 @@ fA.rnd.1 <- create.fused(data.rec = data_us16_wi1, data.don = anes_data_selected
                          mtc.ids = rnd.1$mtc.ids, z.vars = c("V162034a"))
 unique(fA.rnd.1$V162034a)
 
-# Assuming 'hid' is the household identifier and 'pid' is the personal identifier
 
 # Merge household and personal data based on 'hid' and 'pid'
 merged_data <- merge(data_us16_wh, fA.rnd.1, by.x = "hid", by.y = "hid", all.x = TRUE)
-
-# Print the first few rows of the merged dataset to check
-head(merged_data)
