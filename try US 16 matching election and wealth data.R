@@ -9,7 +9,7 @@ library(StatMatch)
 getwd()
 setwd("C:/Users/ducie/Documents/WU/distribution field/Project")
 
-########################US16##############################################
+########################          US16         ##############################################
 
 #Load data
 data_us16_wi <- read_dta("us16wp (4).dta")
@@ -43,7 +43,7 @@ data_us16_wi <- data_us16_wi %>%
       educlev %in% c(111, 110) ~ 1,
       educlev == 120 ~ 2,
       educlev == 130 ~ 3,
-      educlev == 210 ~ 4,
+      educlev %in% c(100, 200, 210) ~ 4,
       educlev == 220 ~ 5,
       educlev == 311 ~ 6,
       educlev == 312 ~ 7,
@@ -153,7 +153,6 @@ unique(fA.rnd.1$V162034a)
 
 # Merge household and personal data based on 'hid' and 'pid'
 merged_data <- merge(data_us16_wh, fA.rnd.1, by.x = "hid", by.y = "hid", all.x = TRUE)
-
 
 ########################          US96         ##############################################
 
@@ -278,7 +277,7 @@ rnd.1 <- RANDwNND.hotdeck(data.rec = data_us16_wi1, data.don = anes96_data_selec
 
 fA.rnd.1 <- create.fused(data.rec = data_us16_wi1, data.don = anes96_data_selected1,
                          mtc.ids = rnd.1$mtc.ids, z.vars = c("V960366","V960552"))
-unique(fA.rnd.1$V162034a)
+unique(fA.rnd.1$V960552)
 
 
 # Merge household and personal data based on 'hid' and 'pid'
@@ -412,7 +411,7 @@ rnd.1 <- RANDwNND.hotdeck(data.rec = data_us16_wi1, data.don = anes00_data_selec
 
 fA.rnd.1 <- create.fused(data.rec = data_us16_wi1, data.don = anes00_data_selected1,
                          mtc.ids = rnd.1$mtc.ids, z.vars = c("V000793","V001249"))
-unique(fA.rnd.1$V162034a)
+unique(fA.rnd.1$001249)
 
 
 # Merge household and personal data based on 'hid' and 'pid'
@@ -546,7 +545,141 @@ rnd.1 <- RANDwNND.hotdeck(data.rec = data_us16_wi1, data.don = anes04_data_selec
 
 fA.rnd.1 <- create.fused(data.rec = data_us16_wi1, data.don = anes04_data_selected1,
                          mtc.ids = rnd.1$mtc.ids, z.vars = c("V043085a","V045026"))
-unique(fA.rnd.1$V162034a)
+unique(fA.rnd.1$V045026)
+
+
+# Merge household and personal data based on 'hid' and 'pid'
+merged_data <- merge(data_us16_wh, fA.rnd.1, by.x = "hid", by.y = "hid", all.x = TRUE)
+
+########################          US08       ##############################################
+
+#Load data will need to adapt in Lissy
+data_us16_wi <- read_dta("us16wp (4).dta")
+data_us16_wh <- read_dta("us16wh (1).dta")
+
+zip_file_path_anes08 <- "C:/Users/ducie/Documents/WU/distribution field/Project/Election data/anes_timeseries_2008_dta.zip"
+extracted_dir <- "C:/Users/ducie/Documents/WU/distribution field/Project/Election data/"
+unzip(zip_file_path_anes08, exdir = extracted_dir)
+list.files(extracted_dir)
+anes_08 <- read_dta(file.path(extracted_dir, "anes_timeseries_2008.dta"))
+
+
+#create data frame with variables of interest from anes 
+
+selected_vars <- c("V083249", "V083222a","V083218x", "V085044a")
+anes08_data_selected <- anes_08 %>% 
+  select(all_of(selected_vars))
+
+
+#transforming the education variable for data fusion
+data_us16_wi <- data_us16_wi %>%
+  mutate(
+    education = case_when(
+      educlev %in% c(111, 110,120) ~ 1,
+      educlev %in% c(130,100) ~ 2,
+      educlev %in% c(200, 210) ~ 3,
+      educlev == 220 ~ 4,
+      educlev %in% c(311, 300) ~ 5,
+      educlev %in% c(312,310) ~ 6,
+      educlev %in% c(313, 320) ~ 7,
+      TRUE ~ NA_integer_
+    )
+  ) %>%
+  select(-educlev)  
+
+anes08_data_selected <- anes08_data_selected %>%
+  mutate(
+    education = case_when(
+      V083218x == 1 ~ 1,
+      V083218x == 2 ~ 2,
+      V083218x == 3 ~ 3,
+      V083218x == 4 ~ 4,
+      V083218x == 5 ~ 5,
+      V083218x == 6 ~ 6,
+      V083218x == 7 ~ 7,
+      TRUE ~ NA_real_
+    )
+  ) %>%
+  select(-V083218x)
+
+#modify the employment status variable for data fusion
+anes08_data_selected <- anes08_data_selected %>%
+  mutate(
+    employment = case_when(
+      V083222a == 1 ~ 1,
+      V083222a == 4 ~ 2,
+      V083222a == 5 ~ 3,
+      V083222a == 6 ~ 4,
+      V083222a == 7 ~ 5,
+      V083222a == 8 ~ 6,
+      TRUE ~ NA_integer_
+    )
+  ) %>%
+  select(-V083222a)
+
+data_us16_wi <- data_us16_wi %>%
+  mutate(
+    employment = case_when(
+      lfs == 100 ~ 1,
+      lfs == 200 ~ 2,
+      lfs == 310 ~ 3,
+      lfs == 330 ~ 4,
+      lfs == 340 ~ 5,
+      lfs == 320 ~ 6,
+      lfs == 300 ~ NA_integer_,
+      TRUE ~ NA_integer_
+    )
+  ) %>%
+  select(-lfs)
+
+#modify the income variable for data fusion
+anes08_data_selected$V083249 <- as.factor(anes08_data_selected$V083249)
+
+anes08_data_selected <- anes08_data_selected %>%
+  mutate(
+    income = as.numeric(case_when(
+      V083249 %in% c("1", "2", "3","4", "5", "6", "7", "8", "9") ~ 1,
+      V083249 %in% c("10", "11", "12", "13", "14") ~ 2,
+      V083249 %in% c( "15", "16", "17") ~ 3,
+      V083249 %in% c("18", "19", "20") ~ 4,
+      V083249 %in% c( "21", "22", "23","24","25") ~ 5,
+      TRUE ~ NA_real_
+    ))
+  ) %>%
+  select(-V083249)
+
+
+data_us16_wi <- data_us16_wi %>%
+  mutate(
+    income = case_when(
+      pitotal < 20712 ~ 1,
+      pitotal >= 20712 & pitotal <= 39000 ~ 2,
+      pitotal >= 39001 & pitotal <= 62725 ~ 3,
+      pitotal >= 62726 & pitotal <= 100240 ~ 4,
+      pitotal > 100240 ~ 5,
+      TRUE ~ NA_real_
+    )
+  )
+
+
+
+### matching process ###
+#Random distance hot deck
+
+anes08_data_selected1 <- anes08_data_selected[complete.cases(anes08_data_selected$income), ]
+unique(anes08_data_selected1$income)
+data_us16_wi1 <- data_us16_wi[complete.cases(data_us16_wi$income), ]
+unique(data_us16_wi1$income)
+
+
+
+group.v <- c("income")
+rnd.1 <- RANDwNND.hotdeck(data.rec = data_us16_wi1, data.don = anes08_data_selected1,
+                          match.vars = NULL, don.class = group.v)
+
+fA.rnd.1 <- create.fused(data.rec = data_us16_wi1, data.don = anes08_data_selected1,
+                         mtc.ids = rnd.1$mtc.ids, z.vars = c("V085044a"))
+unique(fA.rnd.1$V085044a)
 
 
 # Merge household and personal data based on 'hid' and 'pid'
