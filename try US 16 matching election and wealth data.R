@@ -283,3 +283,138 @@ unique(fA.rnd.1$V162034a)
 
 # Merge household and personal data based on 'hid' and 'pid'
 merged_data <- merge(data_us16_wh, fA.rnd.1, by.x = "hid", by.y = "hid", all.x = TRUE)
+
+########################          US00       ##############################################
+
+#Load data will need to adapt in Lissy
+data_us16_wi <- read_dta("us16wp (4).dta")
+data_us16_wh <- read_dta("us16wh (1).dta")
+
+zip_file_path_anes00 <- "C:/Users/ducie/Documents/WU/distribution field/Project/Election data/anes2000TSdta.zip"
+extracted_dir <- "C:/Users/ducie/Documents/WU/distribution field/Project/Election data/"
+unzip(zip_file_path_anes00, exdir = extracted_dir)
+list.files(extracted_dir)
+anes_00 <- read_dta(file.path(extracted_dir, "anes2000TS.dta"))
+
+
+#create data frame with variables of interest from anes 
+
+selected_vars <- c("V000793", "V001249","V000908", "V000912", "V000918", "V000909","V000995")
+anes00_data_selected <- anes_00 %>% 
+  select(all_of(selected_vars))
+
+
+#transforming the education variable for data fusion
+data_us16_wi <- data_us16_wi %>%
+  mutate(
+    education = case_when(
+      educlev %in% c(111, 110,120) ~ 1,
+      educlev %in% c(130,100) ~ 2,
+      educlev %in% c(200, 210) ~ 3,
+      educlev == 220 ~ 4,
+      educlev %in% c(311, 300) ~ 5,
+      educlev %in% c(312,310) ~ 6,
+      educlev %in% c(313, 320) ~ 7,
+      TRUE ~ NA_integer_
+    )
+  ) %>%
+  select(-educlev)  
+
+anes00_data_selected <- anes00_data_selected %>%
+  mutate(
+    education = case_when(
+      V000912 == 1 ~ 1,
+      V000912 == 2 ~ 2,
+      V000912 == 3 ~ 3,
+      V000912 == 4 ~ 4,
+      V000912 == 5 ~ 5,
+      V000912 == 6 ~ 6,
+      V000912 == 7 ~ 7,
+      TRUE ~ NA_real_
+    )
+  ) %>%
+  select(-V000912)
+
+#modify the employment status variable for data fusion
+anes00_data_selected <- anes00_data_selected %>%
+  mutate(
+    employment = case_when(
+      V000918 %in% c(1, 2) ~ 1,
+      V000918 == 3 ~ 2,
+      V000918 == 4 ~ 3,
+      V000918 == 5 ~ 4,
+      V000918 == 6 ~ 5,
+      V000918 == 7 ~ 6,
+      TRUE ~ NA_integer_
+    )
+  ) %>%
+  select(-V000918)
+
+data_us16_wi <- data_us16_wi %>%
+  mutate(
+    employment = case_when(
+      lfs == 100 ~ 1,
+      lfs == 200 ~ 2,
+      lfs == 310 ~ 3,
+      lfs == 330 ~ 4,
+      lfs == 340 ~ 5,
+      lfs == 320 ~ 6,
+      lfs == 300 ~ NA_integer_,
+      TRUE ~ NA_integer_
+    )
+  ) %>%
+  select(-lfs)
+
+#modify the income variable for data fusion
+anes00_data_selected$V000995 <- as.factor(anes00_data_selected$V000995)
+
+anes00_data_selected <- anes00_data_selected %>%
+  mutate(
+    income = as.numeric(case_when(
+      V000995 %in% c("1", "2", "3") ~ 1,
+      V000995 %in% c("4", "5") ~ 2,
+      V000995 == 6 ~ 3,
+      V000995 %in% c("7", "8", "9") ~ 4,
+      V000995 %in% c( "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20", "21", "22") ~ 5,
+      TRUE ~ NA_real_
+    ))
+  ) %>%
+  select(-V000995)
+
+
+data_us16_wi <- data_us16_wi %>%
+  mutate(
+    income = case_when(
+      pitotal < 17955 ~ 1,
+      pitotal >= 17955 & pitotal <= 33006 ~ 2,
+      pitotal >= 33007 & pitotal <= 52272 ~ 3,
+      pitotal >= 52273 & pitotal <= 81960 ~ 4,
+      pitotal > 81960 ~ 5,
+      TRUE ~ NA_real_
+    )
+  )
+
+
+
+### matching process ###
+#Random distance hot deck
+
+anes00_data_selected1 <- anes00_data_selected[complete.cases(anes00_data_selected$income), ]
+unique(anes00_data_selected1$income)
+data_us16_wi1 <- data_us16_wi[complete.cases(data_us16_wi$income), ]
+unique(data_us16_wi1$income)
+
+
+
+group.v <- c("income")
+rnd.1 <- RANDwNND.hotdeck(data.rec = data_us16_wi1, data.don = anes00_data_selected1,
+                          match.vars = NULL, don.class = group.v)
+
+fA.rnd.1 <- create.fused(data.rec = data_us16_wi1, data.don = anes00_data_selected1,
+                         mtc.ids = rnd.1$mtc.ids, z.vars = c("V000793","V001249"))
+unique(fA.rnd.1$V162034a)
+
+
+# Merge household and personal data based on 'hid' and 'pid'
+merged_data <- merge(data_us16_wh, fA.rnd.1, by.x = "hid", by.y = "hid", all.x = TRUE)
+
