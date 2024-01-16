@@ -1,5 +1,16 @@
 #for weight and implicate
-
+#for weight and implicate
+library(mitools)
+library(survey)
+library(srvyr)
+#srvyr is a dplyr version of survey, check out the "Vignettes":
+#https://cran.r-project.org/web/packages/srvyr/index.html
+library(mice)
+library(tidyverse)
+library(oaxaca)
+library(devtools)
+install_github('djalmapessoa/convey')
+library(convey)
 # create have one data frame for each imputed dataset, 
 #and each data frame should include a column for the weights
 
