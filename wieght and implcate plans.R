@@ -1,11 +1,4 @@
 #for weight and implicate
-#for weight and implicate
-library(mitools)
-library(survey)
-library(mice)
-library(tidyverse)
-
-#for weight and implicate
 library(mitools)
 library(survey)
 library(mice)
@@ -27,7 +20,7 @@ for(i in 1:length(dfs)){
     assign(paste0(dfs[i], "_", j), tmp[mi.idx==j,])
   }
 }
-# I have a question because we have both inum.x and inum.x, so should we do it for both or used an additional method
+# I have a question because we have both inum.x and inum.x, so should we 
 # create imputed list
 imputed_data <- imputationList(list(merged08_data1_1, merged08_data1_2, merged08_data1_3, merged08_data1_4, merged08_data1_5))
 #svyrepdsgn
@@ -43,14 +36,47 @@ us.svyrw <- svrepdesign(data=imputed_data,
                         type = "other",
                         combined.weights=TRUE)
 
+#not used 
+#designs <- lapply(imputed_data$imputations, function(df) {
+  #svydesign(ids = ~1, data = df, weights = ~weight_column)
+#})
 
 #fit the probit model
-models <- lapply(designs, function(design) {
-  svyglm(response ~ predictor1 + predictor2, design = design, family = binomial(link = 'probit'))
+# Assuming designs is a list of survey designs
+model_1 <- lapply(us.svyrw, function(design) {
+  svyglm(V085044a ~ 1 + ha, design = design, family = binomial(link = 'probit'))
 })
+
+model_2 <- lapply(us.svyrw, function(design) {
+  svyglm(V085044a ~ 1 + ha + income + partisanship + age + gender + employment_dummy + retirement , design = design, family = binomial(link = 'probit'))
+})
+
+model_3 <- lapply(us.svyrw, function(design) {
+  svyglm(V085044a ~ 1 + hanr, design = design, family = binomial(link = 'probit'))
+})
+
+model_4 <- lapply(us.svyrw, function(design) {
+  svyglm(V085044a ~ 1 + hanr + income + partisanship + age + gender + employment_dummy + retirement , design = design, family = binomial(link = 'probit'))
+})
+
+model_5 <- lapply(us.svyrw, function(design) {
+  svyglm(V085044a ~ 1 + haf, design = design, family = binomial(link = 'probit'))
+})
+
+model_6 <- lapply(us.svyrw, function(design) {
+  svyglm(V085044a ~ 1 + haf + income + partisanship + age + gender + employment_dummy + retirement , design = design, family = binomial(link = 'probit'))
+})
+
+#models <- lapply(designs, function(design) {
+  #svyglm(response ~ predictor1 + predictor2, design = design, family = binomial(link = 'probit'))
+#})
 
 
 #combine the results from the multiple imputation
-combined_results <- MIcombine(models)
-
+combined_results <- MIcombine(model_1)
+combined_results <- MIcombine(model_2)
+combined_results <- MIcombine(model_3)
+combined_results <- MIcombine(model_4)
+combined_results <- MIcombine(model_5)
+combined_results <- MIcombine(model_6)
 
