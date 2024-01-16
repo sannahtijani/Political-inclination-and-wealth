@@ -2,24 +2,39 @@
 #for weight and implicate
 library(mitools)
 library(survey)
-library(srvyr)
-#srvyr is a dplyr version of survey, check out the "Vignettes":
-#https://cran.r-project.org/web/packages/srvyr/index.html
 library(mice)
 library(tidyverse)
-library(oaxaca)
-library(devtools)
-install_github('djalmapessoa/convey')
-library(convey)
+
+#for weight and implicate
+library(mitools)
+library(survey)
+library(mice)
+library(tidyverse)
+
 # create have one data frame for each imputed dataset, 
 #and each data frame should include a column for the weights
+#seprate the dataframes into smaller one by implicate 
+dfs <- c("merged08_data1")
+us16wr <- read_dta("us16wr.dta")
+us16wr <- us16wr %>% replace(is.na(.), 0)
 
+
+for(i in 1:length(dfs)){
+  tmp <- get(dfs[i])
+  mi.idx<-tmp$inum.x
+  for(j in 1:5) {
+    #assign(filename, what)
+    assign(paste0(dfs[i], "_", j), tmp[mi.idx==j,])
+  }
+}
+# I have a question because we have both inum.x and inum.x, so should we do it for both or used an additional method
 # create imputed list
-imputed_data <- imputationList(list(df1, df2, df3, df4, df5))
+imputed_data <- imputationList(list(merged08_data1_1, merged08_data1_2, merged08_data1_3, merged08_data1_4, merged08_data1_5))
 #svyrepdsgn
 
+
 #create survey design for each imputed dataset
-us.svyrw <- svrepdesign(data=us.mi, 
+us.svyrw <- svrepdesign(data=imputed_data, 
                         id = ~hid,
                         weights=~hpopwgt, 
                         repweights=us16wr[, -1], #exclude first col with id
@@ -28,10 +43,6 @@ us.svyrw <- svrepdesign(data=us.mi,
                         type = "other",
                         combined.weights=TRUE)
 
-
-designs <- lapply(imputed_data$imputations, function(df) {
-  svydesign(ids = ~1, data = df, weights = ~weight_column)
-})
 
 #fit the probit model
 models <- lapply(designs, function(design) {
