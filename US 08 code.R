@@ -1,0 +1,470 @@
+library(dplyr)
+library(doBy)
+library(tidyverse)
+library(Hmisc)
+library(tidyr)
+library(haven)
+library(acid)
+library(StatMatch)
+#for weight and implicate
+library(mitools)
+library(survey)
+library(mice)
+
+setwd("C:/Users/ducie/Documents/WU/distribution field/Project")
+#Load data will need to adapt in Lissy
+data_us16_wi <- read_dta("us16wp (4).dta")
+data_us16_wh <- read_dta("us16wh (1).dta")
+
+zip_file_path_anes08 <- "C:/Users/ducie/Documents/WU/distribution field/Project/Election data/anes_timeseries_2008_dta.zip"
+extracted_dir <- "C:/Users/ducie/Documents/WU/distribution field/Project/Election data/"
+unzip(zip_file_path_anes08, exdir = extracted_dir)
+list.files(extracted_dir)
+anes_08 <- read_dta(file.path(extracted_dir, "anes_timeseries_2008.dta"))
+
+merged08 <- merge(data_us16_wh, data_us16_wi, by.x = "hid", by.y = "hid", all.x = TRUE)
+#create data frame with variables of interest from anes 
+
+selected_vars <- c("V083249", "V083222a","V083218x", "V085044a")
+anes08_data_selected <- anes_08 %>% 
+  select(all_of(selected_vars))
+
+
+#transforming the education variable for data fusion
+merged08 <- merged08 %>%
+  mutate(
+    education = case_when(
+      educlev %in% c(111, 110,120) ~ 1,
+      educlev %in% c(130,100) ~ 2,
+      educlev %in% c(200, 210) ~ 3,
+      educlev == 220 ~ 4,
+      educlev %in% c(311, 300) ~ 5,
+      educlev %in% c(312,310) ~ 6,
+      educlev %in% c(313, 320) ~ 7,
+      TRUE ~ NA_integer_
+    )
+  ) %>%
+  select(-educlev)  
+
+anes08_data_selected <- anes08_data_selected %>%
+  mutate(
+    education = case_when(
+      V083218x == 1 ~ 1,
+      V083218x == 2 ~ 2,
+      V083218x == 3 ~ 3,
+      V083218x == 4 ~ 4,
+      V083218x == 5 ~ 5,
+      V083218x == 6 ~ 6,
+      V083218x == 7 ~ 7,
+      TRUE ~ NA_real_
+    )
+  ) %>%
+  select(-V083218x)
+
+#modify the employment status variable for data fusion
+anes08_data_selected <- anes08_data_selected %>%
+  mutate(
+    employment = case_when(
+      V083222a == 1 ~ 1,
+      V083222a == 4 ~ 2,
+      V083222a == 5 ~ 3,
+      V083222a == 6 ~ 4,
+      V083222a == 7 ~ 5,
+      V083222a == 8 ~ 6,
+      TRUE ~ NA_integer_
+    )
+  ) %>%
+  select(-V083222a)
+
+merged08 <- merged08 %>%
+  mutate(
+    employment = case_when(
+      lfs == 100 ~ 1,
+      lfs == 200 ~ 2,
+      lfs == 310 ~ 3,
+      lfs == 330 ~ 4,
+      lfs == 340 ~ 5,
+      lfs == 320 ~ 6,
+      lfs == 300 ~ NA_integer_,
+      TRUE ~ NA_integer_
+    )
+  ) %>%
+  select(-lfs)
+
+#modify the income variable for data fusion
+anes08_data_selected$V083249 <- as.factor(anes08_data_selected$V083249)
+
+anes08_data_selected <- anes08_data_selected %>%
+  mutate(
+    income = as.numeric(case_when(
+      V083249 %in% c("1", "2", "3","4", "5", "6", "7", "8", "9") ~ 1,
+      V083249 %in% c("10", "11", "12", "13", "14") ~ 2,
+      V083249 %in% c( "15", "16", "17") ~ 3,
+      V083249 %in% c("18", "19", "20") ~ 4,
+      V083249 %in% c( "21", "22", "23","24","25") ~ 5,
+      TRUE ~ NA_real_
+    ))
+  ) %>%
+  select(-V083249)
+
+
+merged08 <- merged08 %>%
+  mutate(
+    income = case_when(
+      hitotal < 20712 ~ 1,
+      hitotal >= 20712 & hitotal <= 39000 ~ 2,
+      hitotal >= 39001 & hitotal <= 62725 ~ 3,
+      hitotal >= 62726 & hitotal <= 100240 ~ 4,
+      hitotal > 100240 ~ 5,
+      TRUE ~ NA_real_
+    )
+  )
+
+
+
+## test several categories
+# Removing missing values
+anes08_data_selected1 <- anes08_data_selected[complete.cases(anes08_data_selected$employment), ]
+anes08_data_selected1 <- anes08_data_selected1[complete.cases(anes08_data_selected1$income), ]
+anes08_data_selected1 <- anes08_data_selected1[complete.cases(anes08_data_selected1$education), ]
+
+merged08_data1 <- merged08[complete.cases(merged08$employment), ]
+merged08_data1 <- merged08_data1[complete.cases(merged08_data1$income), ]
+merged08_data1 <- merged08_data1[complete.cases(merged08_data1$education), ]
+
+
+# Changing employment variable to 2 when income is 5 and employment is 4, 5, or 6
+anes08_data_selected1$employment <- ifelse(anes08_data_selected1$income == 5 & anes08_data_selected1$employment %in% c(4, 5, 6), 2, anes08_data_selected1$employment)
+merged08_data1$employment <- ifelse(merged08_data1$income == 5 & merged08_data1$employment %in% c(4, 5, 6), 2, merged08_data1$employment)
+
+# Changing income to 3 when employment is 6 and income is 4
+anes08_data_selected1$income <- ifelse(anes08_data_selected1$employment == 6 & anes08_data_selected1$income == 4, 3, anes08_data_selected1$income)
+merged08_data1$income <- ifelse(merged08_data1$employment == 6 & merged08_data1$income == 4, 3, merged08_data1$income)
+
+
+#test with 3
+# If education is 1, income 2 and employment 5 then employment should become 2
+anes08_data_selected1$employment <- ifelse(anes08_data_selected1$education == 1 & anes08_data_selected1$income == 2 & anes08_data_selected1$employment == 5, 2, anes08_data_selected1$employment)
+merged08_data1$employment <- ifelse(merged08_data1$education == 1 & merged08_data1$income == 2 & merged08_data1$employment == 5, 2, merged08_data1$employment)
+
+# If education is 1, income is 3 and employment 4 or 5 then employment must be 2
+anes08_data_selected1$employment <- ifelse(anes08_data_selected1$education == 1 & anes08_data_selected1$income == 3 & anes08_data_selected1$employment %in% c(4, 5), 2, anes08_data_selected1$employment)
+merged08_data1$employment <- ifelse(merged08_data1$education == 1 & merged08_data1$income == 3 & merged08_data1$employment %in% c(4, 5), 2, merged08_data1$employment)
+
+# If education is 1 and income 4 and employment 4 then employment must be 2
+anes08_data_selected1$employment <- ifelse(anes08_data_selected1$education == 1 & anes08_data_selected1$income == 4 & anes08_data_selected1$employment == 4, 2, anes08_data_selected1$employment)
+merged08_data1$employment <- ifelse(merged08_data1$education == 1 & merged08_data1$income == 4 & merged08_data1$employment == 4, 2, merged08_data1$employment)
+
+# If education is 2, income 3, employment 5 then employment should become 2
+anes08_data_selected1$employment <- ifelse(anes08_data_selected1$education == 2 & anes08_data_selected1$income == 3 & anes08_data_selected1$employment == 5, 2, anes08_data_selected1$employment)
+merged08_data1$employment <- ifelse(merged08_data1$education == 2 & merged08_data1$income == 3 & merged08_data1$employment == 5, 2, merged08_data1$employment)
+
+# If education is 2, income is 4 and employment 3 then employment must be 2
+anes08_data_selected1$employment <- ifelse(anes08_data_selected1$education == 2 & anes08_data_selected1$income == 4 & anes08_data_selected1$employment == 3, 2, anes08_data_selected1$employment)
+merged08_data1$employment <- ifelse(merged08_data1$education == 2 & merged08_data1$income == 4 & merged08_data1$employment == 3, 2, merged08_data1$employment)
+
+# If education is 2 and income 5 and employment 3 then employment must be 2
+anes08_data_selected1$employment <- ifelse(anes08_data_selected1$education == 2 & anes08_data_selected1$income == 5 & anes08_data_selected1$employment == 3, 2, anes08_data_selected1$employment)
+merged08_data1$employment <- ifelse(merged08_data1$education == 2 & merged08_data1$income == 5 & merged08_data1$employment == 3, 2, merged08_data1$employment)
+
+# If education is 3, income is 3, and employment is 6 then employment should become 2
+anes08_data_selected1$employment <- ifelse(anes08_data_selected1$education == 3 & anes08_data_selected1$income == 3 & anes08_data_selected1$employment == 6, 2, anes08_data_selected1$employment)
+merged08_data1$employment <- ifelse(merged08_data1$education == 3 & merged08_data1$income == 3 & merged08_data1$employment == 6, 2, merged08_data1$employment)
+
+# If education is 3, income is 4, and employment is 4 or 5 then employment should become 2
+anes08_data_selected1$employment <- ifelse(anes08_data_selected1$education == 3 & anes08_data_selected1$income == 4 & anes08_data_selected1$employment %in% c(4, 5), 2, anes08_data_selected1$employment)
+merged08_data1$employment <- ifelse(merged08_data1$education == 3 & merged08_data1$income == 4 & merged08_data1$employment %in% c(4, 5), 2, merged08_data1$employment)
+
+# If education is 5, income is 3, and employment is 5 then employment should become 2
+anes08_data_selected1$employment <- ifelse(anes08_data_selected1$education == 5 & anes08_data_selected1$income == 3 & anes08_data_selected1$employment == 5, 2, anes08_data_selected1$employment)
+merged08_data1$employment <- ifelse(merged08_data1$education == 5 & merged08_data1$income == 3 & merged08_data1$employment == 5, 2, merged08_data1$employment)
+
+# If education is 5, income is 4, and employment is 4 or 5 then employment should become 2
+anes08_data_selected1$employment <- ifelse(anes08_data_selected1$education == 5 & anes08_data_selected1$income == 4 & anes08_data_selected1$employment %in% c(4, 5), 2, anes08_data_selected1$employment)
+merged08_data1$employment <- ifelse(merged08_data1$education == 5 & merged08_data1$income == 4 & merged08_data1$employment %in% c(4, 5), 2, merged08_data1$employment)
+
+# If education is 7, income is 1, and employment is 5 then employment should become 2
+anes08_data_selected1$employment <- ifelse(anes08_data_selected1$education == 7 & anes08_data_selected1$income == 1 & anes08_data_selected1$employment == 5, 2, anes08_data_selected1$employment)
+merged08_data1$employment <- ifelse(merged08_data1$education == 7 & merged08_data1$income == 1 & merged08_data1$employment == 5, 2, merged08_data1$employment)
+
+# If education is 7, income is 4, and employment is 4 then employment should become 2
+anes08_data_selected1$employment <- ifelse(anes08_data_selected1$education == 7 & anes08_data_selected1$income == 4 & anes08_data_selected1$employment == 4, 2, anes08_data_selected1$employment)
+merged08_data1$employment <- ifelse(merged08_data1$education == 7 & merged08_data1$income == 4 & merged08_data1$employment == 4, 2, merged08_data1$employment)
+
+# If education is 7, income is 5, and employment is 3 then employment should become 2
+anes08_data_selected1$employment <- ifelse(anes08_data_selected1$education == 7 & anes08_data_selected1$income == 5 & anes08_data_selected1$employment == 3, 2, anes08_data_selected1$employment)
+merged08_data1$employment <- ifelse(merged08_data1$education == 7 & merged08_data1$income == 5 & merged08_data1$employment == 3, 2, merged08_data1$employment)
+
+# If employment is 1, income is 4, and education is 1 then education should become 2
+anes08_data_selected1$education <- ifelse(anes08_data_selected1$employment == 1 & anes08_data_selected1$income == 4 & anes08_data_selected1$education == 1, 2, anes08_data_selected1$education)
+merged08_data1$education <- ifelse(merged08_data1$employment == 1 & merged08_data1$income == 4 & merged08_data1$education == 1, 2, merged08_data1$education)
+
+# If employment is 2, income is 5, and education is 2 then education should become 1
+anes08_data_selected1$education <- ifelse(anes08_data_selected1$employment == 2 & anes08_data_selected1$income == 5 & anes08_data_selected1$education == 2, 1, anes08_data_selected1$education)
+merged08_data1$education <- ifelse(merged08_data1$employment == 2 & merged08_data1$income == 5 & merged08_data1$education == 2, 1, merged08_data1$education)
+
+# If employment is 2, income is 5, and education is 5 then education should become 6
+anes08_data_selected1$education <- ifelse(anes08_data_selected1$employment == 2 & anes08_data_selected1$income == 5 & anes08_data_selected1$education == 5, 6, anes08_data_selected1$education)
+merged08_data1$education <- ifelse(merged08_data1$employment == 2 & merged08_data1$income == 5 & merged08_data1$education == 5, 6, merged08_data1$education)
+
+# If employment is 2, income is 4, and education is 6 then education should become 7
+anes08_data_selected1$education <- ifelse(anes08_data_selected1$employment == 2 & anes08_data_selected1$income == 4 & anes08_data_selected1$education == 6, 7, anes08_data_selected1$education)
+merged08_data1$education <- ifelse(merged08_data1$employment == 2 & merged08_data1$income == 4 & merged08_data1$education == 6, 7, merged08_data1$education)
+
+# If employment is 2, income is 5, and education is 7 then education should become 6
+anes08_data_selected1$education <- ifelse(anes08_data_selected1$employment == 2 & anes08_data_selected1$income == 5 & anes08_data_selected1$education == 7, 6, anes08_data_selected1$education)
+merged08_data1$education <- ifelse(merged08_data1$employment == 2 & merged08_data1$income == 5 & merged08_data1$education == 7, 6, merged08_data1$education)
+
+# If employment is 2, income is 3, and education is 1 or 2 then education should become 3
+anes08_data_selected1$education <- ifelse(anes08_data_selected1$employment == 2 & anes08_data_selected1$income == 3 & anes08_data_selected1$education %in% c(1, 2), 3, anes08_data_selected1$education)
+merged08_data1$education <- ifelse(merged08_data1$employment == 2 & merged08_data1$income == 3 & merged08_data1$education %in% c(1, 2), 3, merged08_data1$education)
+
+# If employment is 2, income is 4, and education is 1 or 2 then education should become 3
+anes08_data_selected1$education <- ifelse(anes08_data_selected1$employment == 2 & anes08_data_selected1$income == 4 & anes08_data_selected1$education %in% c(1, 2), 3, anes08_data_selected1$education)
+merged08_data1$education <- ifelse(merged08_data1$employment == 2 & merged08_data1$income == 4 & merged08_data1$education %in% c(1, 2), 3, merged08_data1$education)
+
+# If employment is 2, income is 4, and education is 5 or 7 then education should become 6
+anes08_data_selected1$education <- ifelse(anes08_data_selected1$employment == 2 & anes08_data_selected1$income == 4 & anes08_data_selected1$education %in% c(5, 7), 6, anes08_data_selected1$education)
+merged08_data1$education <- ifelse(merged08_data1$employment == 2 & merged08_data1$income == 4 & merged08_data1$education %in% c(5, 7), 6, merged08_data1$education)
+
+# If employment is 2, income is 5, and education is 1 then education should become 2
+anes08_data_selected1$education <- ifelse(anes08_data_selected1$employment == 2 & anes08_data_selected1$income == 5 & anes08_data_selected1$education == 1, 2, anes08_data_selected1$education)
+merged08_data1$education <- ifelse(merged08_data1$employment == 2 & merged08_data1$income == 5 & merged08_data1$education == 1, 2, merged08_data1$education)
+
+# If employment is 5, income is 4, and education is 6 then employment should become 2
+anes08_data_selected1$employment <- ifelse(anes08_data_selected1$employment == 5 & anes08_data_selected1$income == 4 & anes08_data_selected1$education == 6, 2, anes08_data_selected1$employment)
+merged08_data1$employment <- ifelse(merged08_data1$employment == 5 & merged08_data1$income == 4 & merged08_data1$education == 6, 2, merged08_data1$employment)
+
+# If employment is 3, income is 5, and education is 6 then employment should become 2
+anes08_data_selected1$employment <- ifelse(anes08_data_selected1$employment == 3 & anes08_data_selected1$income == 5 & anes08_data_selected1$education == 6, 2, anes08_data_selected1$employment)
+merged08_data1$employment <- ifelse(merged08_data1$employment == 3 & merged08_data1$income == 5 & merged08_data1$education == 6, 2, merged08_data1$employment)
+
+# If employment is 2, income is 5, and education is 2 then education should become 3
+anes08_data_selected1$education <- ifelse(anes08_data_selected1$employment == 2 & anes08_data_selected1$income == 5 & anes08_data_selected1$education == 2, 3, anes08_data_selected1$education)
+merged08_data1$education <- ifelse(merged08_data1$employment == 2 & merged08_data1$income == 5 & merged08_data1$education == 2, 3, merged08_data1$education)
+
+# If employment is 2, income is 4, and education is 6 then income should become 5
+anes08_data_selected1$income <- ifelse(anes08_data_selected1$employment == 2 & anes08_data_selected1$income == 4 & anes08_data_selected1$education == 6, 5, anes08_data_selected1$income)
+merged08_data1$income <- ifelse(merged08_data1$employment == 2 & merged08_data1$income == 4 & merged08_data1$education == 6, 5, merged08_data1$income)
+
+group.v <- c("employment", "income","education")
+rnd.1 <- RANDwNND.hotdeck(data.rec = merged08_data1, data.don = anes08_data_selected1,
+                          match.vars = NULL, don.class = group.v)
+
+fA.rnd.1 <- create.fused(data.rec = merged08_data1, data.don = anes08_data_selected1,
+                         mtc.ids = rnd.1$mtc.ids, z.vars = c("V085044a"))
+unique(fA.rnd.1$V085044a)
+
+# working
+
+# Load required libraries
+library(mitools)
+library(survey)
+library(mice)
+library(dplyr)
+
+# Assuming dfs contains the names of your imputed datasets
+dfs <- c("fA.rnd.1")
+
+# Read replicate weights
+us16wr <- read_dta("us16wr.dta")
+us16wr <- us16wr %>% replace(is.na(.), 0)
+
+# Create separate data frames for each imputed dataset
+for (i in 1:length(dfs)) {
+  tmp <- get(dfs[i])
+  mi.idx <- tmp$inum.x
+  for (j in 1:5) {
+    assign(paste0(dfs[i], "_", j), tmp[mi.idx == j,])
+  }
+}
+
+# Create an imputation list
+imputed_data <- imputationList(list(fA.rnd.1_1, fA.rnd.1_2, fA.rnd.1_3, fA.rnd.1_4, fA.rnd.1_5))
+
+# Create survey design for each imputed dataset
+us.svyrw <- svrepdesign(
+  data = imputed_data,
+  id = ~hid,
+  weights = ~hpopwgt,
+  repweights = us16wr[, -1],  # Exclude first column with id
+  scale = 1,
+  rscales = rep(1 / 100),  # If using full set
+  type = "other",
+  combined.weights = TRUE
+)
+
+# Modify imputed data within the survey design object
+us.svyrw$designs <- lapply(us.svyrw$designs, function(design) {
+  design$variables$V085044a <- ifelse(design$variables$V085044a == 1, 0,
+                                      ifelse(design$variables$V085044a == 3, 1, NA))
+  return(design)
+})
+
+# Fit the probit model on each imputed dataset
+model_1 <- lapply(us.svyrw$designs, function(design) {
+  svyglm(V085044a ~ 1 + haf, design, family = binomial(link = 'probit'))
+})
+
+# Combine results from multiple imputed datasets
+combined_results <- MIcombine(model_1)
+
+# Display summary of combined results
+summary(combined_results)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#seprate the dataframes into smaller one by implicate 
+dfs <- c("fA.rnd.1")
+us16wr <- read_dta("us16wr.dta")
+us16wr <- us16wr %>% replace(is.na(.), 0)
+
+
+for(i in 1:length(dfs)){
+  tmp <- get(dfs[i])
+  mi.idx<-tmp$inum.x
+  for(j in 1:5) {
+    #assign(filename, what)
+    assign(paste0(dfs[i], "_", j), tmp[mi.idx==j,])
+  }
+}
+# I have a question because we have both inum.x and inum.x, so should we 
+# create imputed list
+imputed_data <- imputationList(list(fA.rnd.1_1, fA.rnd.1_2, fA.rnd.1_3, fA.rnd.1_4, fA.rnd.1_5))
+#svyrepdsgn
+
+#create survey design for each imputed dataset
+us.svyrw <- svrepdesign(data=imputed_data, 
+                        id = ~hid,
+                        weights=~hpopwgt, 
+                        repweights=us16wr[, -1], #exclude first col with id
+                        scale = 1 ,
+                        rscales = rep( 1 / 100 ) , #if using full set
+                        type = "other",
+                        combined.weights=TRUE)
+
+
+# Apply the function to each design in the list
+us.svyrw <- lapply(us.svyrw, function(design) {
+  # Get the unique values of the variable
+  unique_values <- unique(design$variables$V085044a)
+  
+  # Check if the unique values are 0 and 1
+  if (all(unique_values %in% c(0, 1))) {
+    print("The unique values of the variable are 0 and 1.")
+  } else {
+    print("The unique values of the variable are not only 0 and 1.")
+  }
+  
+  return(design)
+})
+
+
+#fit the probit model
+# Assuming designs is a list of survey designs
+#issue all ha observation are 0 in the sample so probit don't run
+model_1 <- lapply(us.svyrw, function(design) {
+  svyglm(V085044a ~ 1 + haf, design = design, family = binomial(link = 'probit'))
+})
+
+
+##ai try
+model_1 <- lapply(us.svyrw, function(design_list) {
+  lapply(design_list, function(design) {
+    svyglm(V085044a ~ 1 + haf, design = design, family = binomial(link = 'probit'))
+  })
+})
+
+# Apply the function to each design in the list
+us.svyrw <- lapply(us.svyrw, function(design_list) {
+  lapply(design_list, function(design) {
+    # Get the unique values of the variable
+    unique_values <- unique(design$variables$V085044a)
+    
+    # Print the unique values
+    print(unique_values)
+    
+    return(design)
+  })
+})
+
+# Apply the function to each design in the list
+us.svyrw <- lapply(us.svyrw, function(design_list) {
+  lapply(design_list, function(design) {
+    # Recode the variable
+    variables(design)$V085044a <- ifelse(variables(design)$V085044a == 1, 0,
+                                         ifelse(variables(design)$V085044a == 3, 1, NA))
+    
+    # Get the unique values of the variable
+    unique_values <- unique(variables(design)$V085044a)
+    
+    # Print the unique values
+    print(unique_values)
+    
+    return(design)
+  })
+})
+
+
+
+model_1 <- lapply(us.svyrw, function(design) {
+  svyglm(V085044a ~ 1 + haf, design = design, family = binomial(link = 'probit'))
+  })
+
+model_1 <- lapply(us.svyrw, function(design) {
+  +   svyglm(V085044a ~ 1 + haf, design = design, family = binomial(link = 'probit'))
+   })
+
+#not used 
+#designs <- lapply(imputed_data$imputations, function(df) {
+#svydesign(ids = ~1, data = df, weights = ~weight_column)
+#})
+
+
+model_2 <- lapply(us.svyrw, function(design) {
+  svyglm(V085044a ~ 1 + ha + income + partisanship + age + gender + employment_dummy + retirement , design = design, family = binomial(link = 'probit'))
+})
+
+model_3 <- lapply(us.svyrw, function(design) {
+  svyglm(V085044a ~ 1 + hanr, design = design, family = binomial(link = 'probit'))
+})
+
+model_4 <- lapply(us.svyrw, function(design) {
+  svyglm(V085044a ~ 1 + hanr + income + partisanship + age + gender + employment_dummy + retirement , design = design, family = binomial(link = 'probit'))
+})
+
+model_5 <- lapply(us.svyrw, function(design) {
+  svyglm(V085044a ~ 1 + haf, design = design, family = binomial(link = 'probit'))
+})
+
+model_6 <- lapply(us.svyrw, function(design) {
+  svyglm(V085044a ~ 1 + haf + income + partisanship + age + gender + employment_dummy + retirement , design = design, family = binomial(link = 'probit'))
+})
+
+#models <- lapply(designs, function(design) {
+#svyglm(response ~ predictor1 + predictor2, design = design, family = binomial(link = 'probit'))
+#})
+
+
+#combine the results from the multiple imputation
+combined_results <- MIcombine(model_1)
+combined_results <- MIcombine(model_2)
+combined_results <- MIcombine(model_3)
+combined_results <- MIcombine(model_4)
+combined_results <- MIcombine(model_5)
+combined_results <- MIcombine(model_6)
