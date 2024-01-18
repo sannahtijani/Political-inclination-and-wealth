@@ -6,8 +6,12 @@ library(tidyr)
 library(haven)
 library(acid)
 library(StatMatch)
+#for weight and implicate
+library(mitools)
+library(survey)
+library(mice)
 
-
+setwd("C:/Users/ducie/Documents/WU/distribution field/Project")
 #Load data will need to adapt in Lissy
 data_us16_wi <- read_dta("us16wp (4).dta")
 data_us16_wh <- read_dta("us16wh (1).dta")
@@ -119,8 +123,6 @@ merged08 <- merged08 %>%
 
 
 ## test several categories
-
-
 # Removing missing values
 anes08_data_selected1 <- anes08_data_selected[complete.cases(anes08_data_selected$employment), ]
 anes08_data_selected1 <- anes08_data_selected1[complete.cases(anes08_data_selected1$income), ]
@@ -245,12 +247,6 @@ merged08_data1$education <- ifelse(merged08_data1$employment == 2 & merged08_dat
 anes08_data_selected1$income <- ifelse(anes08_data_selected1$employment == 2 & anes08_data_selected1$income == 4 & anes08_data_selected1$education == 6, 5, anes08_data_selected1$income)
 merged08_data1$income <- ifelse(merged08_data1$employment == 2 & merged08_data1$income == 4 & merged08_data1$education == 6, 5, merged08_data1$income)
 
-
-
-
-
-
-
 group.v <- c("employment", "income","education")
 rnd.1 <- RANDwNND.hotdeck(data.rec = merged08_data1, data.don = anes08_data_selected1,
                           match.vars = NULL, don.class = group.v)
@@ -258,3 +254,60 @@ rnd.1 <- RANDwNND.hotdeck(data.rec = merged08_data1, data.don = anes08_data_sele
 fA.rnd.1 <- create.fused(data.rec = merged08_data1, data.don = anes08_data_selected1,
                          mtc.ids = rnd.1$mtc.ids, z.vars = c("V085044a"))
 unique(fA.rnd.1$V085044a)
+
+# working
+
+# Load required libraries
+library(mitools)
+library(survey)
+library(mice)
+library(dplyr)
+
+# Assuming dfs contains the names of your imputed datasets
+dfs <- c("fA.rnd.1")
+
+# Read replicate weights
+us16wr <- read_dta("us16wr.dta")
+us16wr <- us16wr %>% replace(is.na(.), 0)
+
+# Create separate data frames for each imputed dataset
+for (i in 1:length(dfs)) {
+  tmp <- get(dfs[i])
+  mi.idx <- tmp$inum.x
+  for (j in 1:5) {
+    assign(paste0(dfs[i], "_", j), tmp[mi.idx == j,])
+  }
+}
+
+# Create an imputation list
+imputed_data <- imputationList(list(fA.rnd.1_1, fA.rnd.1_2, fA.rnd.1_3, fA.rnd.1_4, fA.rnd.1_5))
+
+# Create survey design for each imputed dataset
+us.svyrw <- svrepdesign(
+  data = imputed_data,
+  id = ~hid,
+  weights = ~hpopwgt,
+  repweights = us16wr[, -1],  # Exclude first column with id
+  scale = 1,
+  rscales = rep(1 / 100),  # If using full set
+  type = "other",
+  combined.weights = TRUE
+)
+
+# Modify imputed data within the survey design object
+us.svyrw$designs <- lapply(us.svyrw$designs, function(design) {
+  design$variables$V085044a <- ifelse(design$variables$V085044a == 1, 0,
+                                      ifelse(design$variables$V085044a == 3, 1, NA))
+  return(design)
+})
+
+# Fit the probit model on each imputed dataset
+model_1 <- lapply(us.svyrw$designs, function(design) {
+  svyglm(V085044a ~ 1 + haf, design, family = binomial(link = 'probit'))
+})
+
+# Combine results from multiple imputed datasets
+combined_results <- MIcombine(model_1)
+
+# Display summary of combined results
+summary(combined_results)
